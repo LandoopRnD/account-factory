@@ -13,19 +13,17 @@ Parameters:
 
 Resources:
 
-  AccountBuilderLambda:
+  LambdaFunction:
     Type: "AWS::Lambda::Function"
     Properties:
-      Handler: "AccountCreationLambda.main"
-      #Handler: "index.main"
+      Handler: lambda_function.lambda_handler
       Runtime: "python3.6"
       Role: !GetAtt LambdaExecuteRole.Arn
       Timeout: 600
       TracingConfig:
           Mode: "Active"
       Code:
-        S3Bucket: !Ref ArtifactStoreBucket
-        S3Key: "AccountCreationLambda.zip"
+        ZipFile: function.zip
 #      Environment:
 #        Variables:
 #          'accountemail' : !Ref accountemail

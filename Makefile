@@ -48,13 +48,16 @@ release:
 # buildspec.yml phase
 install:
 	@echo install started $(shell date)
-	@aws s3 cp AccountCreationLambda.zip s3://
+	$(eval ARTIFACT_STORE_BUCKET := $(shell aws cloudformation describe-stack-resource --stack-name Pipeline$(APPLICATION_STACK_NAME) --logical-resource-id PipelineArtifactsBucket --profile $(APPLICATION_STACK_NAME) --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
+	@aws s3 cp AccountCreationLambda.zip s3://$(ARTIFACT_STORE_BUCKET) --profile $(APPLICATION_STACK_NAME)
 # buildspec.yml phase
 pre_build:
 	@echo pre_build started $(shell date)
 # buildspec.yml phase
 build:
 	@echo build started $(shell date)
+	$(eval FUNCTION_NAME := $(shell aws cloudformation describe-stack-resource --stack-name $(APPLICATION_STACK_NAME) --logical-resource-id LambdaFunction --profile $(APPLICATION_STACK_NAME) --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
+	$(MAKE) -C account_builder FUNCTION_NAME=$(FUNCTION_NAME)
 # buildspec.yml phase
 post_build:
 	@echo post_build started $(shell date)

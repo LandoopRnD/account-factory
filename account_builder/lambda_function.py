@@ -40,9 +40,11 @@ __version__ = '1.0'
 __author__ = '@VKK@'
 __email__ = 'vkkuchib@'
 
+
 def get_client(service):
   client = boto3.client(service)
   return client
+
 
 def create_account(event,accountname,accountemail,accountrole,access_to_billing,scp,root_id):
     account_id = 'None'
@@ -86,7 +88,6 @@ def get_template(sourcebucket,baselinetemplate):
     except botocore.exceptions.ClientError as e:
         print("Error accessing the source bucket. Error : {}".format(e))
         return e
-    
 
 
 def delete_default_vpc(credentials,currentregion):
@@ -128,6 +129,7 @@ def delete_default_vpc(credentials,currentregion):
     delete_vpc_response = ec2_client.delete_vpc(VpcId=default_vpcid,DryRun=False)
     print("Deleted Default VPC in {}".format(currentregion))
     return delete_vpc_response
+
 
 def create_custom_vpc(credentials,stackregion,AZ1Name,AZ2Name,VPCCIDR,SubnetAPublicCIDR,SubnetBPublicCIDR,SubnetAPrivateCIDR,SubnetBPrivateCIDR,VPCName):
     #print(credentials,stackregion,AZ1Name,AZ2Name,VPCCIDR,SubnetAPublicCIDR,SubnetBPublicCIDR,SubnetAPrivateCIDR,SubnetBPrivateCIDR)
@@ -215,6 +217,7 @@ def create_custom_vpc(credentials,stackregion,AZ1Name,AZ2Name,VPCCIDR,SubnetAPub
     print("Private Route Table Association ID for Subnet A : {}".format(private_route_table_associationA['AssociationId']))
     print("Private Route Table Association ID for Subnet B : {}".format(private_route_table_associationB['AssociationId']))
 
+
 def deploy_resources(credentials, template, stackname, stackregion, adminusername, adminpassword,account_id,newrole_arn):
 
     datestamp = time.strftime("%d/%m/%Y")
@@ -294,6 +297,7 @@ def deploy_resources(credentials, template, stackname, stackregion, adminusernam
         print("Error deploying stack.There might be an error either accessing the Source bucket or accessing the baseline template from the source bucket.Error : {}".format(e))
         return e
 
+
 def assume_role(account_id, account_role):
     sts_client = boto3.client('sts')
     role_arn = 'arn:aws:iam::' + account_id + ':role/' + account_role
@@ -314,6 +318,7 @@ def assume_role(account_id, account_role):
     # From the response that contains the assumed role, get the temporary
     # credentials that can be used to make subsequent API calls
     return assumedRoleObject['Credentials']
+
 
 def get_ou_name_id(root_id,organization_unit_name):
 
@@ -348,6 +353,7 @@ def get_ou_name_id(root_id,organization_unit_name):
         organization_unit_id = ou_name_to_id[organization_unit_name]
     
     return(organization_unit_name,organization_unit_id)
+
 
 def create_newrole(newrole,top_level_account,credentials,newrolepolicy):
     iam_client = boto3.client('iam',aws_access_key_id=credentials['AccessKeyId'],
@@ -386,12 +392,14 @@ def create_newrole(newrole,top_level_account,credentials,newrolepolicy):
     print("{},{},{}".format(newrole,top_level_account,credentials))
     return create_role_response['Role']['Arn']
 
+
 def selfinvoke(event,status):
     lambda_client = boto3.client('lambda')
     function_name = os.environ['AWS_LAMBDA_FUNCTION_NAME']
     event['RequestType'] = status
     print('invoking itself ' + function_name)
     response = lambda_client.invoke(FunctionName=function_name, InvocationType='Event',Payload=json.dumps(event))
+
 
 def respond_cloudformation(event, status, data=None):
     responseBody = {
@@ -407,6 +415,7 @@ def respond_cloudformation(event, status, data=None):
     print('Response = ' + json.dumps(responseBody))
     print(event)
     requests.put(event['ResponseURL'], data=json.dumps(responseBody))
+
 
 def delete_respond_cloudformation(event, status, message):
     responseBody = {
@@ -426,9 +435,7 @@ def delete_respond_cloudformation(event, status, message):
     #requests.put(event['ResponseURL'], data=json.dumps(responseBody))
      
 
-
-
-def main(event,context):
+def lambda_handler(event,context):
     print(event)
     client = get_client('organizations')
     accountname = os.environ['accountname']
