@@ -49,7 +49,7 @@ release:
 install:
 	@echo install started $(shell date)
 	pip install jq
-	#$(eval ARTIFACT_STORE_BUCKET := $(shell aws cloudformation describe-stack-resource --stack-name Pipeline$(APPLICATION_STACK_NAME) --logical-resource-id PipelineArtifactsBucket --profile $(APPLICATION_STACK_NAME) --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
+	#$(eval ARTIFACT_STORE_BUCKET := $(shell aws cloudformation describe-stack-resource --stack-name Pipeline$(APPLICATION_STACK_NAME) --logical-resource-id PipelineArtifactsBucket --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
 	#@aws s3 cp AccountCreationLambda.zip s3://$(ARTIFACT_STORE_BUCKET) --profile $(APPLICATION_STACK_NAME)
 # buildspec.yml phase
 pre_build:
@@ -57,7 +57,7 @@ pre_build:
 # buildspec.yml phase
 build:
 	@echo build started $(shell date)
-	$(eval FUNCTION_NAME := $(shell aws cloudformation describe-stack-resource --stack-name $(APPLICATION_STACK_NAME) --logical-resource-id LambdaFunction --profile $(APPLICATION_STACK_NAME) --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
+	$(eval FUNCTION_NAME := $(shell aws cloudformation describe-stack-resource --stack-name $(APPLICATION_STACK_NAME) --logical-resource-id LambdaFunction --output json | jq '.["StackResourceDetail"]["PhysicalResourceId"]'))
 	$(MAKE) -C account_builder FUNCTION_NAME=$(FUNCTION_NAME)
 # buildspec.yml phase
 post_build:
