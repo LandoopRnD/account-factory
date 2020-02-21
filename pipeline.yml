@@ -1,0 +1,386 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Lenses.io CloudFormation Template Continuous Delivery: This template
+  builds an AWS CodePipeline pipeline that implements a CI/CD (deployment)
+  pipeline for AWS CloudFormation and lambda function
+
+Parameters:
+  # *** The stack name for the actual application we're deploying
+  ApplicationStackName:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-]+'
+
+  # *** This value must always be passed in when creating / updating stack
+  # 'NoEcho' is set to true, for security, so token won't be visible when examining the resulting stack
+  GitHubOAuthToken:
+    Type: String
+    NoEcho: true
+    MinLength: 40
+    MaxLength: 40
+    AllowedPattern: '[a-z0-9]*'
+
+  # *** The remaining parameters should either be:
+  # - overridden via changing 'Default' here (PREFERABLE, since then they're in source control)
+  # - or you can pass them in when creating / updating the stack
+
+  # *** The owner of the Github repo for this application.
+  GitHubOwner:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-]+'
+
+  GitHubRepo:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-_]+'
+
+  GitHubBranch:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-/]+'
+
+Resources:
+  PipelineArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactsBucket
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Github
+          Actions:
+            - Name: Source
+              InputArtifacts: []
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              OutputArtifacts:
+              - Name: SourceCode
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                PollForSourceChanges: false
+                OAuthToken: !Ref GitHubOAuthToken
+              RunOrder: '1'
+        - Name: Infrastructure
+          Actions:
+            - Name: AWS
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider:  CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceCode
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND,CAPABILITY_IAM
+                RoleArn: !GetAtt CloudformationRole.Arn
+                StackName: !Ref ApplicationStackName
+                TemplatePath: SourceCode::cloudformation.yml
+              RunOrder: '1'
+        - Name: Build
+          Actions:
+            - Name: BlobTrigger
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Sub '${ApplicationStackName}__BlobTrigger'
+              InputArtifacts:
+                - Name: SourceCode
+              RunOrder: '1'
+
+  # 'GithubWebhook' satisfies two requirements:
+  # -- Means that updates are pushed from GitHub, rather than AWS having to poll
+  # -- Means we can filter for required changes
+  GithubWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: !Ref GitHubOAuthToken
+      RegisterWithThirdParty: 'true'
+      Filters:
+      - JsonPath: '$.ref'
+        MatchEquals: refs/heads/{Branch}
+      TargetPipeline: !Ref CodePipeline
+      TargetAction: Source
+      TargetPipelineVersion: !GetAtt CodePipeline.Version
+
+
+  BlobTriggerCodeBuild:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: !Sub '${ApplicationStackName}__BlobTrigger'
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: azure/buildspec.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: 303519801974.dkr.ecr.us-east-1.amazonaws.com/azure-functions-core-tools:2.7.1948
+      ServiceRole: !Ref CodePipelineBuildRole
+      TimeoutInMinutes: '5'
+
+  CodePipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSLambdaFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSElasticBeanstalkFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonECS_FullAccess'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'codecommit:*'
+                  - 's3:*'
+                  - 'codebuild:StartBuild'
+                  - 'codebuild:BatchGetBuilds'
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:DeleteStack'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:CreateChangeSet'
+                  - 'cloudformation:ExecuteChangeSet'
+                  - 'cloudformation:DeleteChangeSet'
+                  - 'cloudformation:DescribeChangeSet'
+                  - 'cloudformation:SetStackPolicy'
+                  - 'iam:PassRole'
+                  - 'sns:Publish'
+                Resource: '*'
+
+  CodePipelineBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodeCommitPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'codecommit:*'
+                Resource: '*'
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:List*'
+                Resource: '*'
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:UpdateFunctionCode'
+                Resource: '*'
+        - PolicyName: ECRPolocy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:PullImage'
+                Resource: '*'
+        - PolicyName: SSMPolocy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameters'
+                Resource: '*'
+
+  CloudformationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PipelineArtifactsBucket}/*'
+                  - 'arn:aws:s3:::awsserverlessrepo-changesets-plntc6bfnfj/*'
+                  - 'arn:aws:s3:::cost-and-usage-reports-us-east-1-303519801974/foreign-exchange-rates/automation/*'
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+        - PolicyName: IAMPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'iam:CreateRole'
+                  - 'iam:DeleteRole'
+                  - 'iam:PutRolePolicy'
+                  - 'iam:DeleteRolePolicy'
+                  - 'iam:PassRole'
+                  - 'iam:GetRole'
+                  - 'iam:GetRolePolicy'
+                  - 'iam:UpdateAssumeRolePolicy'
+                  - 'iam:DetachRolePolicy'
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:CreateUser'
+                  - 'iam:DeleteUser'
+                  - 'iam:GetUserPolicy'
+                  - 'iam:PutUserPolicy'
+                  - 'iam:ListAccessKeys'
+                  - 'iam:GetUser'
+                  - 'iam:DeleteUserPolicy'
+                  - 'iam:DeleteAccessKey'
+                Resource: '*'
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:*'
+                Resource: '*'
+        - PolicyName: SNSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sns:ListTopics'
+                  - 'sns:CreateTopic'
+                  - 'sns:DeleteTopic'
+                  - 'sns:GetTopicAttributes'
+                  - 'sns:SetTopicAttributes'
+                  - 'sns:Subscribe'
+                Resource: '*'
+        - PolicyName: CloudWatchEventsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'events:DescribeRule'
+                  - 'events:PutRule'
+                  - 'events:RemoveTargets'
+                  - 'events:DeleteRule'
+                  - 'events:PutTargets'
+                Resource: '*'
+        - PolicyName: DynamoDbPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'glue:CreateDatabase'
+                  - 'glue:DeleteDatabase'
+                  - 'glue:CreateCrawler'
+                  - 'glue:DeleteCrawler'
+                  - 'glue:CreateTable'
+                  - 'glue:DeleteTable'
+                  - 'glue:StopCrawler'
+                  - 'glue:GetCrawler'
+                  - 'glue:UpdateCrawler'
+                  - 'glue:UpdateTable'
+                Resource: '*'
+        - PolicyName: CloudWatchPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:DescribeAlarms'
+                  - 'cloudwatch:CreateAlarm'
+                  - 'cloudwatch:DeleteAlarm'
+                  - 'cloudwatch:PutMetricAlarm'
+                  - 'cloudwatch:DeleteAlarms'
+                Resource: '*'
+        - PolicyName: CloudFormtationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:CreateChangeSet'
+                Resource: '*'
+        - PolicyName: ServerlessRepoPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'serverlessrepo:CreateCloudFormationTemplate'
+                  - 'serverlessrepo:GetCloudFormationTemplate'
+                Resource: '*'
+
+
+
