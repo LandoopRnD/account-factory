@@ -1,4 +1,4 @@
-APPLICATION_STACK_NAME?=AcountFactory
+APPLICATION_STACK_NAME?=AccountFactory
 GITHUB_OAUTH_TOKEN?=$(shell bash -c 'read -p "GITHUB_OAUTH_TOKEN: " var; echo $$var')
 GITHUB_REPO?=aws-account-factory
 GITHUB_OWNER?=LandoopRnD
@@ -45,3 +45,16 @@ release:
 	@git add --all; \
 	 git commit -m "$(COMMENT)"; \
 	 git push
+# buildspec.yml phase
+install:
+	@echo install started $(shell date)
+	@aws s3 cp AccountCreationLambda.zip s3://
+# buildspec.yml phase
+pre_build:
+	@echo pre_build started $(shell date)
+# buildspec.yml phase
+build:
+	@echo build started $(shell date)
+# buildspec.yml phase
+post_build:
+	@echo post_build started $(shell date)

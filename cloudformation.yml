@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: |
+  Lenses.io CloudFormation Template: Creates a Lambda application
+  to automate the creation and provisioning of AWS accounts.
+
+Parameters:
+
+  ArtifactStoreBucket:
+    Description: 'S3 bucket for CI/CD pipeline and lambda artifacts'
+    Type: String
+    Default: 'pipelineaccountfactory-pipelineartifactsbucket-wthwxlmiv9l5'
+
+Resources:
+
+  AccountBuilderLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "AccountCreationLambda.main"
+      #Handler: "index.main"
+      Runtime: "python3.6"
+      Role: !GetAtt LambdaExecuteRole.Arn
+      Timeout: 600
+      TracingConfig:
+          Mode: "Active"
+      Code:
+        S3Bucket: !Ref ArtifactStoreBucket
+        S3Key: "AccountCreationLambda.zip"
+#      Environment:
+#        Variables:
+#          'accountemail' : !Ref accountemail
+#          'accountname' : !Ref accountname
+#          'newrolepolicy': !Ref newrolepolicy
+#          'newrole': !Ref 'newrole'
+#          'organizationunitname': !Ref 'organizationunitname'
+#          'stackname' : !Ref stackname
+#          'stackregion' : !Ref stackregion
+#          'adminusername' : !Ref adminusername
+#          'adminpassword' : !Ref adminpassword
+#          'sourcebucket' : !Ref sourcebucket
+#          'baselinetemplate': !Ref baselinetemplate
+#          'AZ1Name' : !Ref AZ1Name
+#          'AZ2Name' : !Ref AZ2Name
+#          'VPCCIDR' : !Ref VPCCIDR
+#          'SubnetAPublicCIDR' : !Ref SubnetAPublicCIDR
+#          'SubnetBPublicCIDR' : !Ref SubnetBPublicCIDR
+#          'SubnetAPrivateCIDR' : !Ref SubnetAPrivateCIDR
+#          'SubnetBPrivateCIDR' : !Ref SubnetBPrivateCIDR
+#          'VPCName' : !Ref VPCName
+
+
+  LambdaExecuteRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+      - PolicyName: LambdaAllowAllPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            Effect: Allow
+            Action: "*"
+            Resource: "*"
